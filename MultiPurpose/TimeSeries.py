@@ -191,7 +191,7 @@ def threeMoments(buf, **kwargs):
             values.append(e)
             if len(binIdx) == 2:
                 weights.append(float(lst[binIdx[1]])-float(lst[binIdx[0]]))
-                assert float(lst[binIdx[1]]) > float(lst[binIdx[0]])
+                assert float(lst[binIdx[1]]) > float(lst[binIdx[0]]), "%.20f %.20f" % (float(lst[binIdx[1]]), float(lst[binIdx[0]]))
         if e != first:
             allIdentical = False
     if allIdentical:
@@ -204,10 +204,11 @@ def threeMoments(buf, **kwargs):
 
     if not values:
         return float('nan'), float('nan'), float('nan')
-
+    
     u = sum(k*x for k, x in zip(weights, values)) / sum(weights)
 
-    v = sum(k*x**2 - u**2 for k, x in zip(weights, values)) / sum(weights)
+    #v = sum(k*x**2 - u**2 for k, x in zip(weights, values)) / sum(weights) # fixed what I think is a bug in Lars' formula
+    v = sum(k*(x - u)**2 for k, x in zip(weights, values)) / sum(weights)
 
     A = (sum(k*x**3 for k, x in zip(weights, values)) / sum(weights)) - (sum(k*x**2 + 2*u**3 for k, x in zip(weights, values)) * 3*u / sum(weights))
 
@@ -230,7 +231,13 @@ def summaryStats(inputFileName, binIdx, stats, binSize, outputFileName=None, jum
     binSize and an optional colIdx list argument referring to relevant indexes in each
     line. Thay may return a float or a list/tuple of floats.
     """
-    inputFile = open(inputFileName, 'r')
+    if type(inputFileName) in (tuple, list):
+        # This is a nasty hack. there should be a more generetic interface in getInput
+        # that handles genetic iterators.
+        inputFile = ('\t'.join(map(str, x))+'\n' for x in inputFileName)
+    else:
+        inputFile = open(inputFileName, 'r')
+
     if outputFileName:
         outputFile = open(outputFileName, 'w')
     else:
@@ -252,6 +259,8 @@ def summaryStats(inputFileName, binIdx, stats, binSize, outputFileName=None, jum
     else:
         assert all(isinstance(binIdx[i], int) for i in range(len(binIdx)))
 
+    binSize = float(binSize)
+
     if not jumpSize:
         jumpSize = binSize
 
@@ -264,7 +273,12 @@ def summaryStats(inputFileName, binIdx, stats, binSize, outputFileName=None, jum
             if inputBuffer:
                 l = inputBuffer.pop().strip()
             else:
-                l = inputFile.readline().strip()
+                ## l = inputFile.readline().strip()
+                try:
+                    l = inputFile.next().strip()
+                except StopIteration:
+                    l = None
+                    
             if not l:
                 return None, None
             else:
@@ -280,7 +294,7 @@ def summaryStats(inputFileName, binIdx, stats, binSize, outputFileName=None, jum
                 return [float(lst[x]) for x in binIdx], l
 
     def overlap(p):
-        return p[0] < binStart + binSize
+        return p[0] < float(str(binStart + binSize)) # float str hack to give to give this number same treatment as the other in terms of reading and writing to strings
 #         if len(p) > 1:
 #             assert len(p) == 2
 #             assert p[0] >= binStart, str(p) + " " +  str(binStart)
@@ -291,24 +305,24 @@ def summaryStats(inputFileName, binIdx, stats, binSize, outputFileName=None, jum
 #             return p[0] >= binStart and p[0] < binStart + binSize
 
     def checkForOverhang(p, l):
-        if len(p) > 1 and p[1] > binStart+binSize:
+        if len(p) > 1 and p[1] > float(str(binStart+binSize)):  # float str hack to give to give this number same treatment as the other in terms of reading and writing to strings
+
             lst = l.split()
 
             assert p[0] == float(lst[binIdx[0]]) and p[1] == float(lst[binIdx[1]])
 
             lst[binIdx[0]] = p[0]
-            lst[binIdx[1]] = binStart+binSize
+            lst[binIdx[1]] = float(str(binStart+binSize))  # float str hack to give to give this number same treatment as the other in terms of reading and writing to strings
             l1 = "\t".join(map(str, lst)) # subst positions
 
-            lst[binIdx[0]] = binStart+binSize
+            lst[binIdx[0]] = float(str(binStart+binSize))  # float str hack to give to give this number same treatment as the other in terms of reading and writing to strings
             lst[binIdx[1]] = p[1]
             l2 = "\t".join(map(str, lst)) # subst positions
-            
             assert l1 != l2
             assert l2 != l
 
             inputBuffer.append(l2)
-            return (p[0], binStart+jumpSize), l1
+            return (p[0], float(str(binStart+jumpSize))), l1  # float str hack to give to give this number same treatment as the other in terms of reading and writing to strings
         return p, l
 
     inputBuffer = list()
@@ -320,7 +334,8 @@ def summaryStats(inputFileName, binIdx, stats, binSize, outputFileName=None, jum
             pos, l = checkForOverhang(pos, l)
             buf.append((pos, l))
             pos, l = getInput()
-            if not pos: 
+
+            if not pos:
                 break
 
         statsList = list()
@@ -337,10 +352,10 @@ def summaryStats(inputFileName, binIdx, stats, binSize, outputFileName=None, jum
         assert statsList
 
         print >>outputFile, "\t".join(map(str, [binStart, binStart + binSize] + statsList))
-
+ 
         binStart += jumpSize
 
-        while len(buf) and buf[0][0][-1] <= binStart:
+        while len(buf) and buf[0][0][-1] <= float(str(binStart)): # float str hack to give to give this number same treatment as the other in terms of reading and writing to strings
             buf.pop(0)
 
     if not outputFileName:
