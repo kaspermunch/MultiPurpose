@@ -34,7 +34,7 @@ class Bisect(object):
 
     def index_of_rightmost_overlapping(self, end):
         'Find index of rightmost start less than end'
-        i = bisect.bisect_left(self.starts, end) # extra minus one because we want overlaps between starts and an end coord
+        i = bisect.bisect_left(self.starts, end)
         if i:
             assert self.starts[i-1] < end
             return i-1
@@ -298,6 +298,261 @@ class BufferedIterator(object):
             raise StopIteration
     def putback(self, data):
         self.buffer.append(data)
+
+
+class Mapping(object):
+
+    def __init__(self, file1, file2, idx1=[0,1,2], idx2=[0,1,2], presorted=False, nonoverlapping=False):
+
+        self.presorted = presorted
+        self.nonoverlapping = nonoverlapping
+        self.coordinateIdxs1 = idx1
+        self.coordinateIdxs2 = idx2
+
+        self.file1data = dict()
+        self.file2data = dict()
+
+        try:
+            instream1 = open(file1, 'r')
+            self.iter1 = iter(instream1)
+        except:
+            file1.seek(0)
+            self.iter1 = iter(file1)
+        try:
+            instream2 = open(file2, 'r')
+            self.iter2 = iter(instream2)
+        except:
+            file2.seek(0)
+            self.iter2 = iter(file2)
+
+    def __iter__(self):
+
+        # Iterators to read in data lines:
+        dataIterator1 = DataIterator(self.iter1, self.coordinateIdxs1)
+        dataIterator2 = DataIterator(self.iter2, self.coordinateIdxs2)
+
+        # Sort and make iterators:
+        if not self.presorted:
+            lst1 = []
+            for data in dataIterator1:
+                lst1.append(data)
+                self.file1data[data.linenr] = data
+            lst1.sort()
+            lst1.reverse()
+            lst2 = []
+            # Make buffered iterator:
+            self.file1 = BufferedList(lst1)
+            for data in dataIterator2:
+                lst2.append(data)
+                self.file2data[data.linenr] = data
+            lst2.sort()
+            lst2.reverse()
+
+            # Make buffered iterator:
+            self.file2 = BufferedList(lst2)
+        else:
+            # Make buffered iterators:
+            self.file1 = BufferedIterator(dataIterator1)
+            self.file2 = BufferedIterator(dataIterator2)
+
+        self.data = dict()
+
+        # Initialise Sets to hold overlapping data lines within each file:
+        cluster1 = self.nextCluster(self.file1)
+        cluster2 = []
+        while cluster1:
+
+            # Get set of overlapping datas from file2:
+            cluster2 = self.nextOverlapCluster(self.file2, cluster1)
+            
+            orig2 = copy.deepcopy(cluster2)
+
+            if len(cluster2):
+
+                overlap, nonoverlap = self.getMap(cluster1, cluster2)
+                if self.nonoverlapping:
+                    if nonoverlap:                        
+                        for n in nonoverlap:
+                            yield n
+                else:
+                    if overlap:
+                        for o in overlap:
+                            self.data[o[0]] = o[1:]
+                            yield o
+                        
+                #self.printSet(overlap, sys.stdout)
+                # We might need the data from cluster2 that extends
+                # past the end of cluster1. So the collapsed regions
+                # from file2 that we might need to look at again are
+                # put back:
+                for data in orig2[::-1]:
+                    self.file2.putback(data)
+
+            elif self.nonoverlapping:
+                for l in cluster1:
+                    yield l
+
+            # Reinitialise:
+            cluster1 = self.nextCluster(self.file1)
+            cluster2 = []
+            
+
+    def printSet(self, set, out):
+        "Prints a set of coord opjects."
+        for data in set:
+            out.write(str(data)+ "\n")
+
+
+    def getMap(self, set1, set2):
+        "Overlap of overlapping datas in two sorted sets of objects."
+
+        overlap = []
+        nonoverlap = []
+        
+        # where we start looking in set2 (it is the index where all
+        # previous datas have ends before the start of the next set1 data):
+        set2Start = 0
+
+        # for data in set1:
+        for i in range(len(set1)):
+            # Indicates whether we have found the set2Start value:
+            set2StartFound = False
+            matches = list()
+            matchIndexes = list()
+            starts = list()
+            ends = list()
+            for j in range(set2Start, len(set2)):
+
+                # Keep track of where to start in set2 next time:
+                if not set2StartFound:
+                    if i < len(set1) - 1 and set2[j].before(set1[i+1]):
+                        set2Start = j
+                    else:
+                        set2StartFound = True                        
+
+                # Check for overlap:
+                if set1[i].overlaps(set2[j]):
+                    # make an overlap data:
+                    matches.append(set2[j].linenr)
+                    matchIndexes.append(j)
+                    starts.append(max(set1[i].start, set2[j].start))
+                    ends.append(min(set1[i].end, set2[j].end))
+# {{{                    
+
+#                     # Keep track of where to start in set2 next time:
+#                     if not set2StartFound:
+#                         if i < len(set1) - 1 and set2[j].end < set1[i+1].start:
+# 
+# #set 1: ################
+# 
+# #set 2: ###################################  first one overlaps the one in set 1
+#                            ######            the next one does not and j is incremented without set2start being incremented...
+#                                       ################# ... so then it craches here....
+# 
+# 
+# 
+#                             #assert j == 0 or j == set2Start + 1, "Incremented by more than one."
+#                             if not (j == 0 or j == set2Start + 1):
+#                                 print set1
+#                                 print set2
+#                                 print j, set2Start + 1
+#                                 sys.exit()
+# 
+#     #                        assert j == set2Start + 1, "Incremented by more than one."
+#                             set2Start = j
+#                         else:
+#                             set2StartFound = 1                        
+
+# }}}
+
+                elif set1[i].before(set2[j]):
+                    # Because the sets are sorted we are not going to find an overlap later on:
+                    break
+
+            if matches:
+                #overlap.append([set1[i].linenr, matches, starts, ends])
+                overlap.append([set1[i], [set2[x] for x in matchIndexes], starts, ends])
+
+        return overlap, [set1[x] for x in [x for x in range(len(set1)) if x not in matchIndexes]]
+
+
+    def nextCluster(self, buffIter):
+        "Gets the next cluster of overlapping datas from the file1 stream."
+
+        cluster = []
+
+        for data in buffIter:
+
+            # Get a cluster (often a singleton) of overlapping file1 datas:
+            if not len(cluster):
+                # If cluster1 is empty we add the line to it:
+                cluster.append(data)
+                continue
+            elif data.overlaps(cluster[-1]):
+                # If cluster1 is not empty and data overlaps the previous data:
+                cluster.append(data)
+                continue
+            else:
+                # If we don't have overlap we buffer the data for the next loop and go on:
+                buffIter.putback(data)
+                break
+
+        cluster = DataSet(cluster)
+        return cluster
+        
+
+    def nextOverlapCluster(self, buffIter, otherCluster):
+        """Gets the next cluster of overlapping datas from the file2 stream
+        that overlaps a cluster from the file1 stream."""
+
+        cluster = []
+
+        # Get a line from buffIter:
+        for data in buffIter:
+
+            if data.before(otherCluster):
+                # Skip the data line if it is before the first line in set1:
+                continue
+            elif data.after(otherCluster):
+                # Buffer and terminate loop if the data line is after the last line in set1:
+                buffIter.putback(data)
+                break
+            else:
+                # data overlaps set1 so we put it in set2:
+                cluster.append(data)
+                continue
+
+        cluster = DataSet(cluster)
+
+        return cluster
+
+
+    def collapse(self, set):
+        "Collapses overlapping datas in a sorted set of objects."
+        i = 0
+        j = 1
+        collapsedSet = []
+
+        new = copy.deepcopy(set)
+
+        while j < len(new):
+            while j < len(new) and new[i].overlaps(new[j]):
+                new[i].end = max(new[i].end, new[j].end)
+                j += 1
+            new[i].onlyCoordinates()
+            collapsedSet.append(new[i])
+            i = j
+            # if we are now at the last data we add it:
+            if i == len(new) - 1:
+                new[i].onlyCoordinates()
+                collapsedSet.append(new[i])
+                break
+            j += 1
+        if len(new) == 1:
+            new[0].onlyCoordinates()
+            collapsedSet.append(new[0])
+        return DataSet(collapsedSet)
+
 
 
 class Overlap(object):
@@ -609,3 +864,12 @@ if __name__ == "__main__":
 #         print line
 
 
+
+    for file1line, file2lines, starts, ends in Mapping(file1, file2, coordinateIdxs1=[0,3,4], coordinateIdxs2=[1,2,2], presorted=True):
+        print file1line
+        for l in file2lines:
+            print '\t', l
+        print
+
+    for file1line in Mapping(file1, file2, coordinateIdxs1=[0,3,4], coordinateIdxs2=[0,3,4], presorted=True, nonoverlapping=True):
+        print file1line
