@@ -233,8 +233,12 @@ def summaryStats(inputFileName, binIdx, stats, binSize, outputFileName=None, jum
     """
     if type(inputFileName) in (tuple, list):
         # This is a nasty hack. there should be a more generetic interface in getInput
-        # that handles genetic iterators.
-        inputFile = ('\t'.join(map(str, x))+'\n' for x in inputFileName)
+        # that handles generic iterators.
+        if inputFileName[0] in (tuple, list):
+            inputFile = ('\t'.join(map(str, x))+'\n' for x in inputFileName)
+        else:
+            inputFile = (str(x)+'\n' for x in inputFileName)
+
     else:
         inputFile = open(inputFileName, 'r')
 
