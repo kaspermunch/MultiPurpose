@@ -41,7 +41,7 @@ class Bisect(object):
 
     def overlappingIntervals(self, start, end):
 
-        assert start < end
+        assert start <= end
         
         startIdx = self.index_of_leftmost_overlapping(start)
         endIdx = self.index_of_rightmost_overlapping(end)
