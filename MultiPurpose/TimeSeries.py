@@ -195,7 +195,7 @@ def threeMoments(buf, **kwargs):
             values.append(e)
             if len(binIdx) == 2:
                 weights.append(float(lst[binIdx[1]])-float(lst[binIdx[0]]))
-                assert float(lst[binIdx[1]]) > float(lst[binIdx[0]]), "%.20f %.20f" % (float(lst[binIdx[1]]), float(lst[binIdx[0]]))
+                #assert float(lst[binIdx[1]]) > float(lst[binIdx[0]]), "%.20f %.20f" % (float(lst[binIdx[1]]), float(lst[binIdx[0]]))
         if e != first:
             allIdentical = False
     if allIdentical:
@@ -238,11 +238,11 @@ def summaryStats(inputFileName, binIdx, stats, binSize, outputFileName=None, jum
     if type(inputFileName) in (tuple, list):
         # This is a nasty hack. there should be a more generetic interface in getInput
         # that handles generic iterators.
-        if inputFileName[0] in (tuple, list):
+        if type(inputFileName[0]) in (tuple, list):
+            #inputFile = ('\t'.join(map(str, x))+'\n' for x in inputFileName)
             inputFile = ('\t'.join(map(str, x))+'\n' for x in inputFileName)
         else:
             inputFile = (str(x)+'\n' for x in inputFileName)
-
     else:
         inputFile = open(inputFileName, 'r')
 
