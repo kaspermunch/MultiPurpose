@@ -91,7 +91,7 @@ def means(buf, **kwargs):
     lst = list()
     for i in colIdx:
         m, v, s = threeMoments(buf, binIdx=binIdx, colIdx=i, rmNaN=rmNaN)
-        result.append(m)
+        lst.append(m)
     return lst
 
 #def sumOfSegmentLengths(buf, binSize, colIdx, binIdx, rmNaN=False):
