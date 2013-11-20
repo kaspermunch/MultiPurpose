@@ -1,6 +1,7 @@
 
 import os, sys, math, re, csv
 import Overlap, StringIO
+from math import log
 
 def midpointCoordinates(inp, outp, colIdx, header=False):
     """
@@ -105,6 +106,9 @@ def sumOfSegmentLengths(buf, **kwargs): # kwargs to capture extra ignored args -
         total += float(l[binIdx[1]]) - float(l[binIdx[0]])
     return total
 
+def proportionOfSegmentLengths(buf, **kwargs):
+    total = sumOfSegmentLengths(buf, **kwargs)
+    return total / float(kwargs['binSize'])
 
 def poissonRateWithCI(buf, **kwargs): # kwargs to capture extra ignored args - to make it usable in smoothedSummaryStats()
     if 'scaling' in kwargs:
@@ -221,7 +225,7 @@ def otherStat(buf, binSize, colIdx=[]):
     pass
 
 
-def summaryStats(inputFileName, binIdx, stats, binSize, outputFileName=None, jumpSize=None, midPoint=False, hasHeader=False):
+def summaryStats(inputFileName, binIdx, stats, binSize, outputFileName=None, jumpSize=None, midPoint=False, hasHeader=False, logBase=1):
     """
     Assumes sorted input. Bins lines in a table on binIdxs using in windows of
     windowSize. If supplying more element in onebinIdxs these must be specified in order
@@ -348,7 +352,10 @@ def summaryStats(inputFileName, binIdx, stats, binSize, outputFileName=None, jum
                 b = zip(*buf)[1] # get data lines in buf
             else:
                 b = buf
-            r = s(b)
+            try:
+                r = s(b, binSize)
+            except TypeError:
+                r = s(b) # to make it back compatible in older code...
             if isinstance(r, list) or isinstance(r, tuple):
                 statsList.extend(r)
             else:
@@ -356,6 +363,12 @@ def summaryStats(inputFileName, binIdx, stats, binSize, outputFileName=None, jum
         assert statsList
 
         print >>outputFile, "\t".join(map(str, [binStart, binStart + binSize] + statsList))
+
+        if logBase != 1:
+            assert jumpSize == binSize, "with using logBase jumpSize must be same as binSize"
+            #jumpRatio = jumpSize / float(binSize)
+            binSize = logBase**(log(binSize, logBase)+1)
+            jumpSize = binSize # * jumpRatio
  
         binStart += jumpSize
 
