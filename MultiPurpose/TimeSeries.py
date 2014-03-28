@@ -206,6 +206,9 @@ def threeMoments(buf, **kwargs):
     if len(binIdx) == 1:
         weights.append(1/float(len(values)))
 
+    if weights:
+        assert len(values) == len(weights)
+
     if not values:
         return float('nan'), float('nan'), float('nan')
     
@@ -214,10 +217,11 @@ def threeMoments(buf, **kwargs):
     #v = sum(k*x**2 - u**2 for k, x in zip(weights, values)) / sum(weights) # fixed what I think is a bug in Lars' formula
     v = sum(k*(x - u)**2 for k, x in zip(weights, values)) / sum(weights)
 
-    A = (sum(k*x**3 for k, x in zip(weights, values)) / sum(weights)) - (sum(k*x**2 + 2*u**3 for k, x in zip(weights, values)) * 3*u / sum(weights))
-
-    s = A / math.sqrt(v)**3
-
+    if v:
+        A = (sum(k*x**3 for k, x in zip(weights, values)) / sum(weights)) - (sum(k*x**2 + 2*u**3 for k, x in zip(weights, values)) * 3*u / sum(weights))
+        s = A / math.sqrt(v)**3
+    else:
+        s = float('nan')
     return u, v, s
 
 
@@ -225,7 +229,7 @@ def otherStat(buf, binSize, colIdx=[]):
     pass
 
 
-def summaryStats(inputFileName, binIdx, stats, binSize, outputFileName=None, jumpSize=None, midPoint=False, hasHeader=False, logBase=1):
+def summaryStats(inputFileName, binIdx, stats, binSize, outputFileName=None, jumpSize=None, midPoint=False, hasHeader=False, logBase=1, end=None, start=0):
     """
     Assumes sorted input. Bins lines in a table on binIdxs using in windows of
     windowSize. If supplying more element in onebinIdxs these must be specified in order
@@ -267,6 +271,9 @@ def summaryStats(inputFileName, binIdx, stats, binSize, outputFileName=None, jum
     else:
         assert all(isinstance(binIdx[i], int) for i in range(len(binIdx)))
 
+    if logBase != 1:
+        assert jumpSize is None, "don't use jumpSize with logBase != 1. in this case jumpSize is determined by logBase"
+
     binSize = float(binSize)
 
     if not jumpSize:
@@ -274,24 +281,8 @@ def summaryStats(inputFileName, binIdx, stats, binSize, outputFileName=None, jum
 
     assert jumpSize <= binSize 
 
-    def getInput():
-        # read lines untill pos is not NA
-        lst = None
-        while not lst or not all(lst[b] != 'NA' for b in binIdx):
-            if inputBuffer:
-                l = inputBuffer.pop().strip()
-            else:
-                ## l = inputFile.readline().strip()
-                try:
-                    l = inputFile.next().strip()
-                except StopIteration:
-                    l = None
-                    
-            if not l:
-                return None, None
-            else:
-                lst = l.split()
-
+    def formatInput(l):
+        lst = l.split()
         if len(binIdx) == 1:
             assert not midPoint, "don't use midPoint with one binby column"                
             return [float(lst[binIdx[0]])], l
@@ -301,8 +292,65 @@ def summaryStats(inputFileName, binIdx, stats, binSize, outputFileName=None, jum
             else:
                 return [float(lst[x]) for x in binIdx], l
 
+    def getInput():
+
+        pair = list()
+        if inputBuffer:
+            pair.append(inputBuffer.pop(0))
+
+        # read a new line until pos is not NA
+        while True:
+            try:
+                l = inputFile.next().strip()
+            except StopIteration:
+                if pair:
+                    return pair[0]
+                else:
+                    return None, None
+            else:
+                lst = l.split()
+                if all(lst[b] != 'NA' for b in binIdx):
+                    pair.append(formatInput(l))
+                    break
+       
+        pair.sort()
+        assert 1 <= len(pair) <= 2, pair
+        if len(pair) == 2:
+            inputBuffer.append(pair[1])
+            inputBuffer.sort()
+        return pair[0]
+
+#     def getInput():
+#         # read lines untill pos is not NA
+#         lst = None
+#         while not lst or not all(lst[b] != 'NA' for b in binIdx):
+#             if inputBuffer:
+#                 l = inputBuffer.pop().strip()
+#             else:
+#                 ## l = inputFile.readline().strip()
+#                 try:
+#                     l = inputFile.next().strip()
+#                 except StopIteration:
+#                     l = None
+#                     
+#             if not l:
+#                 return None, None
+#             else:
+#                 lst = l.split()
+# 
+#         if len(binIdx) == 1:
+#             assert not midPoint, "don't use midPoint with one binby column"                
+#             return [float(lst[binIdx[0]])], l
+#         else:
+#             if midPoint:
+#                 return [float(lst[binIdx[0]]) + (float(lst[binIdx[1]]) - float(lst[binIdx[0]]))/2.0], l              
+#             else:
+#                 return [float(lst[x]) for x in binIdx], l
+
     def overlap(p):
-        return p[0] < float(str(binStart + binSize)) # float str hack to give to give this number same treatment as the other in terms of reading and writing to strings
+        return float(str(binStart)) <= p[0] < float(str(binStart + binSize)) # float str hack to give to give this number same treatment as the other in terms of reading and writing to strings
+
+        #return p[0] < float(str(binStart + binSize)) # float str hack to give to give this number same treatment as the other in terms of reading and writing to strings
 #         if len(p) > 1:
 #             assert len(p) == 2
 #             assert p[0] >= binStart, str(p) + " " +  str(binStart)
@@ -328,23 +376,30 @@ def summaryStats(inputFileName, binIdx, stats, binSize, outputFileName=None, jum
             l2 = "\t".join(map(str, lst)) # subst positions
             assert l1 != l2
             assert l2 != l
-
-            inputBuffer.append(l2)
+            inputBuffer.append(formatInput(l2))
+            inputBuffer.sort()
             return (p[0], float(str(binStart+jumpSize))), l1  # float str hack to give to give this number same treatment as the other in terms of reading and writing to strings
         return p, l
 
     inputBuffer = list()
-    binStart = 0
+    binStart = start
     buf = []
     pos, l = getInput()
+
+    while pos and pos[-1] < binStart: # end before start
+        pos, l = getInput()
+        if not pos:
+            break
+#        assert pos is not None, "no positions after given start"
+
     while pos:
+
         while overlap(pos):
             pos, l = checkForOverhang(pos, l)
             buf.append((pos, l))
             pos, l = getInput()
-
             if not pos:
-                break
+                break            
 
         statsList = list()
         for s in stats:
@@ -352,8 +407,12 @@ def summaryStats(inputFileName, binIdx, stats, binSize, outputFileName=None, jum
                 b = zip(*buf)[1] # get data lines in buf
             else:
                 b = buf
+            if end is not None and end < binStart + binSize: # in case end is defined and this (the last bin includes the end)
+                bs = end - binStart
+            else:
+                bs = binSize
             try:
-                r = s(b, binSize)
+                r = s(b, bs)
             except TypeError:
                 r = s(b) # to make it back compatible in older code...
             if isinstance(r, list) or isinstance(r, tuple):
@@ -365,18 +424,32 @@ def summaryStats(inputFileName, binIdx, stats, binSize, outputFileName=None, jum
         print >>outputFile, "\t".join(map(str, [binStart, binStart + binSize] + statsList))
 
         if logBase != 1:
-            assert jumpSize == binSize, "with using logBase jumpSize must be same as binSize"
             #jumpRatio = jumpSize / float(binSize)
-            binSize = logBase**(log(binSize, logBase)+1)
             jumpSize = binSize # * jumpRatio
- 
+            binSize = logBase**(log(binSize, logBase)+1)
+
+
         binStart += jumpSize
 
         while len(buf) and buf[0][0][-1] <= float(str(binStart)): # float str hack to give to give this number same treatment as the other in terms of reading and writing to strings
             buf.pop(0)
+        # could just as well do buf = []
+        assert not buf
+
+        if end is not None and end <= binStart: # in case end is defined
+            break
+
+    if end is not None:
+        while binStart < end:
+            dummyStats = reduce(lambda x, y: x + y, [s([], binSize) for s in stats], [])
+            print >>outputFile, "\t".join(map(str, [binStart, binStart + binSize] + dummyStats))
+            binStart += jumpSize
+        
 
     if not outputFileName:
-        return [map(float, t.split('\t')) for t in outputFile.getvalue().strip().split('\n')]
+        lines = outputFile.getvalue().strip().split('\n')
+        lines.pop() # remove empty string
+        return [map(float, t.split('\t')) for t in lines]
 
 
 def smoothedSummaryStats(inp, outp, colIdx, binIdx, binSize, windowSizes, stat, statResultMap, hasHeader=False):
@@ -597,3 +670,5 @@ def addEndCoordinates(inp, outp, colIdx, header=False):
             print >>outputFile, "\t".join(l)    
             #print >>outputFile, "\t".join([prevPos, pos, lst[2]])    
         prevPos = pos
+
+
