@@ -9,7 +9,8 @@ class ProgressBar:
         You may specify the progress bar's width, min and max values on init.
     """
 
-    def __init__(self, minValue = 0, maxValue = 100, totalWidth=80):
+    def __init__(self, minValue = 0, maxValue = 100, totalWidth=80, output=sys.stdout):
+        self.output = output
         self.progBar = "[]"   # This holds the progress bar string
         self.min = minValue
         self.max = maxValue
@@ -63,8 +64,8 @@ class ProgressBar:
             first, so it will overwrite the current line in stdout."""
         print '\r',
         self.updateAmount(value)
-        sys.stdout.write(str(self))
-        sys.stdout.flush()
+        self.output.write(str(self))
+        self.output.flush()
 
 if __name__ == "__main__":
     progress = ProgressBar(maxValue=100)
