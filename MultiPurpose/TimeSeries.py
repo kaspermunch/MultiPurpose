@@ -3,6 +3,17 @@ import os, sys, math, re, csv
 import Overlap, StringIO
 from math import log
 
+def binsizes_with_even_nr_obs(starts, obs_per_bin):
+    """
+    List of bin sizes with an even number of observations (based on interval start) in them. 
+    If it exists, the last bin with fewer than obs_per_bin observations is discarded. 
+    """
+    binSizes = [starts[obs_per_bin] - 0]
+    for i in range(obs_per_bin, len(starts)-obs_per_bin, obs_per_bin):
+        binSizes.append(starts[i+obs_per_bin] - starts[i])
+    return binSizes
+
+
 def midpointCoordinates(inp, outp, colIdx, header=False):
     """
     Replace a column of start coordinates with midpoint coordinates
@@ -250,6 +261,11 @@ def summaryStats(inputFileName, binIdx, stats, binSize, outputFileName=None, jum
     else:
         inputFile = open(inputFileName, 'r')
 
+    binSizeList = None
+    if type(binSize) is list:
+        binSizeList = binSize[:]
+        assert not (start or end), "start must be zero and end None when using a precomputed list of bins"
+
     if outputFileName:
         outputFile = open(outputFileName, 'w')
     else:
@@ -273,8 +289,17 @@ def summaryStats(inputFileName, binIdx, stats, binSize, outputFileName=None, jum
 
     if logBase != 1:
         assert jumpSize is None, "don't use jumpSize with logBase != 1. in this case jumpSize is determined by logBase"
+        assert binSizeList is None, "don't use list of bins with logbase"
 
-    binSize = float(binSize)
+    assert not (end and binSizeList), "don't use end with list of bins"
+
+    assert bool()
+
+
+    if binSizeList is not None:
+        binSize = float(binSizeList.pop(0))
+    else:
+        binSize = float(binSize)
 
     if not jumpSize:
         jumpSize = binSize
@@ -427,7 +452,11 @@ def summaryStats(inputFileName, binIdx, stats, binSize, outputFileName=None, jum
             #jumpRatio = jumpSize / float(binSize)
             jumpSize = binSize # * jumpRatio
             binSize = logBase**(log(binSize, logBase)+1)
-
+        elif binSizeList is not None:
+            jumpSize = binSize
+            if not binSizeList:
+                break
+            binSize = float(binSizeList.pop(0))
 
         binStart += jumpSize
 
@@ -448,7 +477,8 @@ def summaryStats(inputFileName, binIdx, stats, binSize, outputFileName=None, jum
 
     if not outputFileName:
         lines = outputFile.getvalue().strip().split('\n')
-        lines.pop() # remove empty string
+        if not lines[-1]:
+            lines.pop() # remove empty string
         return [map(float, t.split('\t')) for t in lines]
 
 
@@ -670,5 +700,34 @@ def addEndCoordinates(inp, outp, colIdx, header=False):
             print >>outputFile, "\t".join(l)    
             #print >>outputFile, "\t".join([prevPos, pos, lst[2]])    
         prevPos = pos
+
+if __name__ == "__main__":
+    import random
+
+    from itertools import izip
+
+    def pairwise(t):
+        it = iter(t)
+        return izip(it,it)
+
+    random.seed(7)
+    starts, ends = zip(*pairwise(sorted(random.sample([x**2 for x in range(1000)], 100))))
+    series = zip(starts, ends, [random.random() for x in starts])
+
+    obs_per_bin = 7
+
+    binSizes = binsizes_with_even_nr_obs(zip(*series)[0], obs_per_bin)
+
+    def count(buf, size):
+        return len(buf)
+
+    for t in summaryStats(series, binIdx=[0,1], stats=count, binSize=binSizes):
+        print t
+
+
+
+
+
+
 
 
