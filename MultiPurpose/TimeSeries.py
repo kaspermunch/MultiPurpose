@@ -2,6 +2,50 @@
 import os, sys, math, re, csv
 import Overlap, StringIO
 from math import log
+from operator import itemgetter
+from bisect import bisect
+
+def binsizes_with_even_inverval_coverage(lst, nrobs, binIdx=[0,1]):
+
+    start_idx, end_idx = binIdx # indeces for start and end values
+
+    intervals = sorted(lst, key=itemgetter(start_idx, end_idx))
+
+    queue = list()
+    total = 0
+    i = 0 # inteval index
+    pos = 0 # sequence index
+    prev_bin_end = 0
+
+    bins = list()
+
+    intervals_end = intervals[-1][end_idx]
+    while pos < intervals_end:
+
+        # get any new intervals
+        while i < len(intervals) and pos == intervals[i][start_idx]:
+            assert intervals[i][start_idx] == int(intervals[i][start_idx]), 'only use ints with this function'
+            queue.insert(bisect(queue, intervals[i][end_idx]), intervals[i][end_idx]) # put the end in a sorted queue
+            # queue.append(intervals[i])
+            i += 1
+
+        # remove intervals no longer overlapping:
+        while queue and queue[0] <= pos:
+            queue.pop(0)
+
+        # update running total
+        total += len(queue)
+
+        if total >= nrobs:
+            binsize = pos - prev_bin_end
+            print >>sys.stderr, binsize, total
+            bins.append(binsize)
+            prev_bin_end = pos
+            total = 0
+
+        pos += 1
+
+    return bins
 
 def binsizes_with_even_nr_obs(starts, obs_per_bin):
     """
@@ -171,6 +215,38 @@ def meanAndStdDev(buf, **kwargs):
     else:
         return u, math.sqrt(v)
 
+def meanAndSE(buf, **kwargs):
+    colIdx, rmNaN = kwargs['colIdx'], kwargs['rmNaN']
+
+    if not buf:
+        return float('nan'), float('nan')
+#    buf = [float(x.split()[colIdx]) == float('nan') for x in buf]
+    s2 = 0.0
+    s = 0.0
+    allIdentical = True
+    first = float(buf[0].split()[colIdx])
+    for l in buf:
+        e = float(l.split()[colIdx])
+
+        if rmNaN and math.isnan(e):
+            continue 
+
+        if e != first:
+            allIdentical = False
+        s += e
+        s2 += e * e 
+
+    if not buf:
+        return float('nan'), float('nan')
+
+    n = len(buf)
+    u = s/n
+    v = s2/n - u**2
+
+    if allIdentical:
+        return first, 0.0
+    else:
+        return u, math.sqrt(v)/math.sqrt(n)
 
 #def threeMoments(buf, binSize, colIdx, binIdx, rmNaN=False):
 def threeMoments(buf, **kwargs):
@@ -293,10 +369,8 @@ def summaryStats(inputFileName, binIdx, stats, binSize, outputFileName=None, jum
 
     assert not (end and binSizeList), "don't use end with list of bins"
 
-    assert bool()
-
-
     if binSizeList is not None:
+        assert jumpSize is None, "don't use jumpSize with list of bin sizes"
         binSize = float(binSizeList.pop(0))
     else:
         binSize = float(binSize)
@@ -345,45 +419,10 @@ def summaryStats(inputFileName, binIdx, stats, binSize, outputFileName=None, jum
             inputBuffer.sort()
         return pair[0]
 
-#     def getInput():
-#         # read lines untill pos is not NA
-#         lst = None
-#         while not lst or not all(lst[b] != 'NA' for b in binIdx):
-#             if inputBuffer:
-#                 l = inputBuffer.pop().strip()
-#             else:
-#                 ## l = inputFile.readline().strip()
-#                 try:
-#                     l = inputFile.next().strip()
-#                 except StopIteration:
-#                     l = None
-#                     
-#             if not l:
-#                 return None, None
-#             else:
-#                 lst = l.split()
-# 
-#         if len(binIdx) == 1:
-#             assert not midPoint, "don't use midPoint with one binby column"                
-#             return [float(lst[binIdx[0]])], l
-#         else:
-#             if midPoint:
-#                 return [float(lst[binIdx[0]]) + (float(lst[binIdx[1]]) - float(lst[binIdx[0]]))/2.0], l              
-#             else:
-#                 return [float(lst[x]) for x in binIdx], l
 
     def overlap(p):
         return float(str(binStart)) <= p[0] < float(str(binStart + binSize)) # float str hack to give to give this number same treatment as the other in terms of reading and writing to strings
 
-        #return p[0] < float(str(binStart + binSize)) # float str hack to give to give this number same treatment as the other in terms of reading and writing to strings
-#         if len(p) > 1:
-#             assert len(p) == 2
-#             assert p[0] >= binStart, str(p) + " " +  str(binStart)
-#             return not (p[1] <= binStart or p[0] >= binStart+binSize)
-# #            return p[1] >= binStart and p[1] < binStart+binSize  or p[0] < binStart and p[1] >= binStart
-#         else:
-#             assert p[0] >= binStart, p[0]
-#             return p[0] >= binStart and p[0] < binStart + binSize
 
     def checkForOverhang(p, l):
         if len(p) > 1 and p[1] > float(str(binStart+binSize)):  # float str hack to give to give this number same treatment as the other in terms of reading and writing to strings
@@ -403,7 +442,7 @@ def summaryStats(inputFileName, binIdx, stats, binSize, outputFileName=None, jum
             assert l2 != l
             inputBuffer.append(formatInput(l2))
             inputBuffer.sort()
-            return (p[0], float(str(binStart+jumpSize))), l1  # float str hack to give to give this number same treatment as the other in terms of reading and writing to strings
+            return (p[0], float(str(binStart+binSize))), l1  # float str hack to give to give this number same treatment as the other in terms of reading and writing to strings
         return p, l
 
     inputBuffer = list()
@@ -425,6 +464,8 @@ def summaryStats(inputFileName, binIdx, stats, binSize, outputFileName=None, jum
             pos, l = getInput()
             if not pos:
                 break            
+
+        assert all(x[0][-1] <= float(str(binStart+binSize)) for x in buf)
 
         statsList = list()
         for s in stats:
@@ -452,18 +493,20 @@ def summaryStats(inputFileName, binIdx, stats, binSize, outputFileName=None, jum
             #jumpRatio = jumpSize / float(binSize)
             jumpSize = binSize # * jumpRatio
             binSize = logBase**(log(binSize, logBase)+1)
+            binStart += jumpSize
         elif binSizeList is not None:
             jumpSize = binSize
+            binStart += jumpSize
             if not binSizeList:
                 break
             binSize = float(binSizeList.pop(0))
-
-        binStart += jumpSize
+        else:
+            binStart += jumpSize
 
         while len(buf) and buf[0][0][-1] <= float(str(binStart)): # float str hack to give to give this number same treatment as the other in terms of reading and writing to strings
             buf.pop(0)
         # could just as well do buf = []
-        assert not buf
+        assert not buf, (float(str(binStart)), buf)
 
         if end is not None and end <= binStart: # in case end is defined
             break
@@ -721,11 +764,13 @@ if __name__ == "__main__":
     def count(buf, size):
         return len(buf)
 
-    for t in summaryStats(series, binIdx=[0,1], stats=count, binSize=binSizes):
+    for t in summaryStats(series, 10000, binIdx=[0,1], stats=count, binSize=binSizes):
         print t
 
 
 
+
+    print binsizes_with_even_inverval_coverage(series, 1000, binIdx=[0,1])
 
 
 
