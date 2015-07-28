@@ -38,7 +38,7 @@ def binsizes_with_even_inverval_coverage(lst, nrobs, binIdx=[0,1]):
 
         if total >= nrobs:
             binsize = pos - prev_bin_end
-            print >>sys.stderr, binsize, total
+#            print >>sys.stderr, binsize, total
             bins.append(binsize)
             prev_bin_end = pos
             total = 0
@@ -506,7 +506,7 @@ def summaryStats(inputFileName, binIdx, stats, binSize, outputFileName=None, jum
         while len(buf) and buf[0][0][-1] <= float(str(binStart)): # float str hack to give to give this number same treatment as the other in terms of reading and writing to strings
             buf.pop(0)
         # could just as well do buf = []
-        assert not buf, (float(str(binStart)), buf)
+        assert not buf or jumpSize < binSize, (float(str(binStart)), buf)
 
         if end is not None and end <= binStart: # in case end is defined
             break
