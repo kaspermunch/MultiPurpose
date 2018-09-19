@@ -78,6 +78,17 @@ class Data(object):
         self.attrib = ''
         self.attribstr = ''
 
+    def __iter__(self):
+        self.i = 0
+        return self
+
+    def next(self):
+        if self.i == len(self.lst):
+            raise StopIteration
+        else:
+            self.i += 1
+            return self.lst[self.i-1]
+
     def __cmp__(self, other):
         return cmp(self.name, other.name) \
                or cmp(self.start, other.start) \
