@@ -38,7 +38,7 @@ def binsizes_with_even_inverval_coverage(lst, nrobs, binIdx=[0,1]):
 
         if total >= nrobs:
             binsize = pos - prev_bin_end
-            print >>sys.stderr, binsize, total
+            # print >>sys.stderr, binsize, total
             bins.append(binsize)
             prev_bin_end = pos
             total = 0
